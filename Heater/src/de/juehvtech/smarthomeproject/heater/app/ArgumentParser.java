@@ -67,7 +67,7 @@ public class ArgumentParser {
             lockFilePath.setStringParser(JSAP.STRING_PARSER)
                     .setShortFlag(ParserTags.SHORT_LOCK_FILE_PATH)
                     .setLongFlag(ParserTags.LOCK_FILE_PATH)
-                    .setRequired(true)
+                    .setRequired(false)
                     .setList(false)
                     .setHelp(ParserTags.TXT_LOCK_FILE_PATH);
             jsap.registerParameter(lockFilePath);
@@ -88,6 +88,16 @@ public class ArgumentParser {
                     .setLongFlag(ParserTags.INIT_IO)
                     .setHelp(ParserTags.TXT_INIT_IO);
             jsap.registerParameter(initIO);
+            
+            // backup plan file
+            FlaggedOption manualTemp = new FlaggedOption(ParserTags.MANUAL_TEMP);
+            manualTemp.setStringParser(JSAP.STRING_PARSER)
+                    .setShortFlag(ParserTags.SHORT_MANUAL_TEMP)
+                    .setLongFlag(ParserTags.MANUAL_TEMP)
+                    .setRequired(false)
+                    .setList(false)
+                    .setHelp(ParserTags.TXT_MANUAL_TEMP);
+            jsap.registerParameter(manualTemp);
 
             // get results
             JSAPResult config = jsap.parse(args);

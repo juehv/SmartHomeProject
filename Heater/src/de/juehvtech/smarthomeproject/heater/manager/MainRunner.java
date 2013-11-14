@@ -8,6 +8,7 @@ import de.juehvtech.smarthomeproject.heater.actor.Heater;
 import de.juehvtech.smarthomeproject.heater.app.Properties;
 import de.juehvtech.smarthomeproject.heater.heatingplan.HeatingPlan;
 import de.juehvtech.smarthomeproject.heater.heatingplan.HeatingPlanReader;
+import de.juehvtech.smarthomeproject.heater.sensor.Button;
 import de.juehvtech.smarthomeproject.heater.sensor.Temperature;
 import java.io.IOException;
 import java.util.logging.Level;
@@ -32,7 +33,15 @@ public class MainRunner implements Runnable {
                 // Execute Plan
                 Temperature sensor = new Temperature();
                 Heater heater = new Heater();
-                if (sensor.isWarmEnough(plan.getActiveTemperature())) {
+                Button manualOverride = new Button();
+                float nominalTemperature = plan.getActiveTemperature();
+                if (manualOverride.isPressed()) {
+                    if (nominalTemperature < Properties.MANUAL_TEMPERATURE) {
+                        nominalTemperature = Properties.MANUAL_TEMPERATURE;
+                    }
+                }
+                System.out.println("button "+manualOverride.isPressed());
+                if (sensor.isWarmEnough(nominalTemperature)) {
                     // Turn Heater off
                     heater.turnOff();
                 } else {

@@ -14,6 +14,7 @@ public final class Properties {
         // empty
     }
     public static final String LOCK_FILE_NAME = "heating-manager.lock";
-    public static String LOCK_FILE_PATH = "../";
+    public static String LOCK_FILE_PATH = "./";
     public static String HEATING_PLAN_FILE = "";
+    public static float MANUAL_TEMPERATURE = 22F;
 }
