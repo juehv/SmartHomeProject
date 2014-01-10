@@ -88,13 +88,13 @@ public class ArgumentParser {
                     .setLongFlag(ParserTags.INIT_IO)
                     .setHelp(ParserTags.TXT_INIT_IO);
             jsap.registerParameter(initIO);
-            
+
             // backup plan file
             FlaggedOption manualTemp = new FlaggedOption(ParserTags.MANUAL_TEMP);
             manualTemp.setStringParser(JSAP.STRING_PARSER)
                     .setShortFlag(ParserTags.SHORT_MANUAL_TEMP)
                     .setLongFlag(ParserTags.MANUAL_TEMP)
-                    .setRequired(false)
+                    .setRequired(true)
                     .setList(false)
                     .setHelp(ParserTags.TXT_MANUAL_TEMP);
             jsap.registerParameter(manualTemp);
@@ -103,8 +103,17 @@ public class ArgumentParser {
             JSAPResult config = jsap.parse(args);
 
             if (config.success()) { // manual args
-                Properties.LOCK_FILE_PATH = config.getString(ParserTags.LOCK_FILE_PATH);
+                if (config.getString(ParserTags.LOCK_FILE_PATH) != null &&
+                        !config.getString(ParserTags.LOCK_FILE_PATH).isEmpty()) {
+                    Properties.LOCK_FILE_PATH = config.getString(ParserTags.LOCK_FILE_PATH);
+                }
                 Properties.HEATING_PLAN_FILE = config.getString(ParserTags.HEATING_PLAN_FILE);
+                if (config.getString(ParserTags.MANUAL_TEMP) != null
+                        && !config.getString(ParserTags.MANUAL_TEMP).isEmpty()) {
+                    Properties.MANUAL_TEMPERATURE =
+                            (float) Integer.parseInt(
+                            config.getString(ParserTags.MANUAL_TEMP));
+                }
                 if ((new File(Properties.LOCK_FILE_PATH)).exists()
                         && (new File(Properties.LOCK_FILE_PATH)).isDirectory()
                         && (new File(Properties.LOCK_FILE_PATH)).canWrite()
