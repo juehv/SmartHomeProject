@@ -84,9 +84,9 @@ void loop() {
     patternHistory = pattern;
 
     // send values
-    mqtt_send_motion_update(1, pattern);
+    mqtt_send_motion_update(1, pirVal1, pirVal3, pattern);
   } else {
-    mqtt_send_motion_update(0, PATTERN_NONE);
+    mqtt_send_motion_update(0, pirVal1, pirVal3, PATTERN_NONE);
   }
 
 

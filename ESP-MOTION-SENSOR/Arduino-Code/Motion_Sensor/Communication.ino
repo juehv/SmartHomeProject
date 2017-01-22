@@ -10,7 +10,9 @@ static const IPAddress WIFI_GW(192, 168, 100, 99);
 //#define MQTT_PW "your_password"
 #define MQTT_CLIENT_NAME "EspMotionSensor"
 
-#define MQTT_TOPIC_MOTION   "jhit/shp/motion/recognition"
+#define MQTT_TOPIC_MOTION_ALL   "jhit/shp/motion/recognition/all"
+#define MQTT_TOPIC_MOTION_R   "jhit/shp/motion/recognition/right"
+#define MQTT_TOPIC_MOTION_L   "jhit/shp/motion/recognition/left"
 #define MQTT_TOPIC_PATTERN  "jhit/shp/motion/pattern"
 
 static WiFiClient espWiFiClient;
@@ -64,7 +66,7 @@ static inline void mqtt_reconnect() {
   while (!client.connected()) {
     maxtries--;
     // If you do not want to use a username and password, change next line to
-    if (client.connect("ESP8266Client")) {} else {
+    if (client.connect(MQTT_CLIENT_NAME)) {} else {
       //if (!client.connect(MQTT_CLIENT_NAME, MQTT_USR, MQTT_PW)) {
       if (maxtries == 0) {
         log_debug("Failed to connect to mqtt server %s after 10 tries with state %d.", MQTT_SERVER);
@@ -79,26 +81,40 @@ static inline void mqtt_reconnect() {
   log_debug ("MQTT connection established as %s to %s:%d", MQTT_CLIENT_NAME, MQTT_SERVER, MQTT_PORT);
 }
 
-uint8_t motionHistoryMqtt;
+uint8_t motionHistoryAllMqtt;
+uint8_t motionHistoryRightMqtt;
+uint8_t motionHistoryLeftMqtt;
 uint8_t patternHistoryMqtt;
-static inline void mqtt_send_motion_update(uint8_t motion, uint8_t pattern) {
+static inline void mqtt_send_motion_update(uint8_t motionAll, uint8_t motionRight, uint8_t motionLeft, uint8_t pattern) {
   if (!client.connected()) {
     mqtt_reconnect();
   }
   char buf[2];
 
-  if (motion != motionHistoryMqtt || pattern != patternHistoryMqtt) {
-    if (!client.publish(MQTT_TOPIC_MOTION, utoa(motion, buf, 2), false)) {
+  if (motionAll != motionHistoryAllMqtt || pattern != patternHistoryMqtt ||
+  motionRight != motionHistoryRightMqtt || motionLeft != motionHistoryLeftMqtt) {
+    if (!client.publish(MQTT_TOPIC_MOTION_ALL, utoa(motionAll, buf, 2), false)) {
       log_debug("Publishing failed");
     } else {
-      motionHistoryMqtt = motion;
+      motionHistoryAllMqtt = motionAll;
     }
+    if (!client.publish(MQTT_TOPIC_MOTION_R, utoa(motionRight, buf, 2), false)) {
+      log_debug("Publishing failed");
+    } else {
+      motionHistoryRightMqtt = motionRight;
+    }
+    if (!client.publish(MQTT_TOPIC_MOTION_L, utoa(motionLeft, buf, 2), false)) {
+      log_debug("Publishing failed");
+    } else {
+      motionHistoryLeftMqtt = motionLeft;
+    }
+    
     if (!client.publish(MQTT_TOPIC_PATTERN, utoa(pattern, buf, 2), false)) {
       log_debug("Publishing failed");
     } else {
       patternHistoryMqtt = pattern;
     }
-    log_debug("Push motion: %d with pattern %d", motion, pattern);
+    log_debug("Push motion: %d with pattern %d", motionAll, pattern);
   } else {
     log_debug("No new value, skip push");
   }
