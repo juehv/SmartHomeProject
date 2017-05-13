@@ -20,8 +20,10 @@ static inline void pm_deep_sleep_def() {
 }
 
 static inline void pm_light_sleep() {
+  WiFi.disconnect();
   wifi_set_sleep_type (LIGHT_SLEEP_T );
   log_debug("start light sleep");
+  delay(100);
 }
 
 static inline void pm_schedule() {

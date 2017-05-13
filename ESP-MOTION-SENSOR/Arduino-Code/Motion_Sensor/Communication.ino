@@ -1,6 +1,7 @@
 #define WIFI_SSID "JuLi_HomeNet"
 #define WIFI_PW "derkonsumgehtumher"
 static const IPAddress WIFI_IP(192, 168, 100, 27);
+static const IPAddress WIFI_DNS(192, 168, 100, 99);
 static const IPAddress WIFI_NET(255, 255, 255, 0);
 static const IPAddress WIFI_GW(192, 168, 100, 99);
 
@@ -19,7 +20,10 @@ static WiFiClient espWiFiClient;
 static PubSubClient client(espWiFiClient);
 
 static inline void wifi_init() {
-  WiFi.config(WIFI_IP, WIFI_GW, WIFI_NET);
+  WiFi.config(WIFI_IP, WIFI_DNS, WIFI_GW, WIFI_NET);
+}
+
+static inline void wifi_connect(){
   WiFi.begin(WIFI_SSID, WIFI_PW);
 
   // Wait for connection
@@ -85,14 +89,15 @@ uint8_t motionHistoryAllMqtt;
 uint8_t motionHistoryRightMqtt;
 uint8_t motionHistoryLeftMqtt;
 uint8_t patternHistoryMqtt;
-static inline void mqtt_send_motion_update(uint8_t motionAll, uint8_t motionRight, uint8_t motionLeft, uint8_t pattern) {
+static inline void mqtt_send_motion_update(uint8_t motionAll, uint8_t motionRight, uint8_t motionLeft) {
+  uint8_t pattern = 0;
   if (!client.connected()) {
     mqtt_reconnect();
   }
   char buf[2];
 
   if (motionAll != motionHistoryAllMqtt || pattern != patternHistoryMqtt ||
-  motionRight != motionHistoryRightMqtt || motionLeft != motionHistoryLeftMqtt) {
+      motionRight != motionHistoryRightMqtt || motionLeft != motionHistoryLeftMqtt) {
     if (!client.publish(MQTT_TOPIC_MOTION_ALL, utoa(motionAll, buf, 2), false)) {
       log_debug("Publishing failed");
     } else {
@@ -108,13 +113,13 @@ static inline void mqtt_send_motion_update(uint8_t motionAll, uint8_t motionRigh
     } else {
       motionHistoryLeftMqtt = motionLeft;
     }
-    
-    if (!client.publish(MQTT_TOPIC_PATTERN, utoa(pattern, buf, 2), false)) {
-      log_debug("Publishing failed");
-    } else {
-      patternHistoryMqtt = pattern;
-    }
-    log_debug("Push motion: %d with pattern %d", motionAll, pattern);
+
+    //    if (!client.publish(MQTT_TOPIC_PATTERN, utoa(pattern, buf, 2), false)) {
+    //      log_debug("Publishing failed");
+    //    } else {
+    //      patternHistoryMqtt = pattern;
+    //    }
+    //    log_debug("Push motion: %d with pattern %d", motionAll, pattern);
   } else {
     log_debug("No new value, skip push");
   }
@@ -129,3 +134,37 @@ static inline void mqtt_send_motion_update(uint8_t motionAll, uint8_t motionRigh
 //  system_rtc_mem_read(64, rtcStore, 4);
 //  system_rtc_mem_write(64, rtcStore, 4);
 //}
+
+//#########################################################################################################
+// Web update
+//#########################################################################################################
+/*
+  To upload through terminal you can use: curl -F "image=@firmware.bin" esp8266-webupdate.local/update
+*/
+
+#include <ESP8266WebServer.h>
+#include <ESP8266mDNS.h>
+#include <ESP8266HTTPUpdateServer.h>
+
+const char* host = "esp8266-webupdate";
+
+ESP8266WebServer httpServer(80);
+ESP8266HTTPUpdateServer httpUpdater;
+
+void ota_init() {
+  log_debug("Setup OTA Server");
+
+  MDNS.begin(host);
+
+  httpUpdater.setup(&httpServer);
+  httpServer.begin();
+
+  MDNS.addService("http", "tcp", 80);
+  IPAddress localIPAddr = WiFi.localIP();
+  log_debug("HTTPUpdateServer ready! Open \"http://%d.%d.%d.%d/update\" in your browser\n",
+            localIPAddr[0], localIPAddr[1], localIPAddr[2], localIPAddr[3]);
+}
+
+void ota_schedule() {
+  httpServer.handleClient();
+}
