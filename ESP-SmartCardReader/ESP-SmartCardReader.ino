@@ -13,6 +13,8 @@
 
 #include "Shifty.h"
 
+#include "sha256.h"
+
 #define PN532_SCK  (13)
 #define PN532_MOSI (5)
 #define PN532_SS   (2)
@@ -25,153 +27,63 @@
 
 #define BUZZER  (15)
 
+#define TEXT_HASH_SIZE (2*SHA256_BLOCK_SIZE+1)
+
 ESP8266WiFiMulti WiFiMulti;
 
 Adafruit_PN532 nfc(PN532_SCK, PN532_MISO, PN532_MOSI, PN532_SS);
 
 Shifty shift;
 
-void openDoor() {
-  tone(BUZZER, 2000, 200);
-  shift.batchWriteBegin();
-  shift.writeBit(1, HIGH);
-  shift.writeBit(2, HIGH);
-  shift.writeBit(3, HIGH);
-  shift.writeBit(4, HIGH);
-  shift.writeBit(5, HIGH);
-  shift.writeBit(6, HIGH);
-  shift.writeBit(7, HIGH);
-  shift.writeBit(8, HIGH);
-  shift.batchWriteEnd();
-  delay(500);
-  shift.writeBit(0, LOW);
-  delay(500);
-  shift.writeBit(0, HIGH);
-  delay(5000);
+char userList[2000][2*SHA256_BLOCK_SIZE+1];
+uint16_t userListeLen = 0;
 
-  shift.batchWriteBegin();
-  shift.writeBit(1, LOW);
-  shift.writeBit(2, LOW);
-  shift.writeBit(3, LOW);
-  shift.writeBit(4, LOW);
-  shift.writeBit(5, LOW);
-  shift.writeBit(6, LOW);
-  shift.writeBit(7, LOW);
-  shift.writeBit(8, LOW);
-  shift.batchWriteEnd();
-  delay(500);
-  shift.writeBit(0, LOW);
-  delay(500);
-  shift.writeBit(0, HIGH);
-  delay(500);
-}
-
-
-void setup() {
-  // Serieal Interface
-  Serial.begin(115200);
-  delay(10);
-
-  // Buzzer
-  pinMode(BUZZER, OUTPUT);
-  digitalWrite(BUZZER, HIGH);
-
-  // Shift Register
-  shift.setBitCount(16);
-  shift.setPins(SH_DATA, SH_CLK, SH_LATCH, SH_IN);
-
-  shift.batchWriteBegin();
-  shift.writeBit(0, HIGH);
+char* hash(char* text) {
+  byte textByte[text.length()];
+  text.getBytes(textByte, text.length());
   
-  shift.writeBit(1, LOW);
-  shift.writeBit(2, LOW);
-  shift.writeBit(3, LOW);
-  shift.writeBit(4, LOW);
-  shift.writeBit(5, LOW);
-  shift.writeBit(6, LOW);
-  shift.writeBit(7, LOW);
-  shift.writeBit(8, LOW);
-  shift.writeBit(9, LOW);
-  shift.writeBit(10, LOW);
-  shift.writeBit(11, LOW);
-  shift.writeBit(12, LOW);
-  shift.writeBit(13, LOW);
-  shift.writeBit(14, LOW);
-  shift.writeBit(15, LOW);
-  shift.batchWriteEnd();
-
-  // NFC
-  nfc.begin();
-
-  uint32_t versiondata = nfc.getFirmwareVersion();
-  if (! versiondata) {
-    Serial.print("Didn't find PN53x board");
-    while (1); // halt
-  }
-  // Got ok data, print it out!
-  Serial.print("Found chip PN5"); Serial.println((versiondata >> 24) & 0xFF, HEX);
-  Serial.print("Firmware ver. "); Serial.print((versiondata >> 16) & 0xFF, DEC);
-  Serial.print('.'); Serial.println((versiondata >> 8) & 0xFF, DEC);
-
-  // configure board to read RFID tags
-  nfc.SAMConfig();
-
-  Serial.println("Waiting for an ISO14443A Card ...");
-
-  // WIFI connection
-  WiFi.mode(WIFI_STA);
-  WiFiMulti.addAP("JuLi_HomeNet", "derkonsumgehtumher");
-
-  Serial.println();
-  Serial.println();
-  Serial.print("Wait for WiFi... ");
-
-  while (WiFiMulti.run() != WL_CONNECTED) {
-    Serial.print(".");
-    delay(500);
-  }
-
-  Serial.println("");
-  Serial.println("WiFi connected");
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
-
-  delay(500);
+  return hashByte(textByte, text.length());
 }
 
+char* hashByte(byte* textByte, int len) {
+  BYTE hash[SHA256_BLOCK_SIZE];
+  char texthash[2*SHA256_BLOCK_SIZE+1];
+  
+  Sha256* hasher=new Sha256();
+  hasher->update(textByte, len);
+  hasher->final(hash);
 
-void loop() {
-  //    const uint16_t port = 80;
-  //    const char * host = "192.168.1.1"; // ip or dns
-  //
-  //
-  //
-  //    Serial.print("connecting to ");
-  //    Serial.println(host);
-  //
-  //    // Use WiFiClient class to create TCP connections
-  //    WiFiClient client;
-  //
-  //    if (!client.connect(host, port)) {
-  //        Serial.println("connection failed");
-  //        Serial.println("wait 5 sec...");
-  //        delay(5000);
-  //        return;
-  //    }
-  //
-  //    // This will send the request to the server
-  //    client.println("Send this data to server");
-  //
-  //    //read back one line from server
-  //    String line = client.readStringUntil('\r');
-  //    Serial.println(line);
-  //
-  //    Serial.println("closing connection");
-  //    client.stop();
-  //
-  //    Serial.println("wait 5 sec...");
-  //    delay(5000);
+  for(int i=0; i<SHA256_BLOCK_SIZE; ++i)
+    sprintf(texthash+2*i, "%02X", hash[i]);
 
+  return texthash;
+}
+
+void loginToServer(){
+  // push message to mqtt
+  
+}
+
+void updateUserList(){
+  // mqtt connection check for update
+  // json parsing
+
+}
+
+bool checkIfUserValid(char* userHash){
+  for (uint16_t i=0; i < userListLen; i++){
+    for (uint16_t j=0; j < TEXT_HASH_SIZE; i++){
+      if (userHash[j] != userList[i][j]){
+        break;
+      } else if (j == TEXT_HASH_SIZE-1){
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+char* readCard(){
   uint8_t success;
   uint8_t uid[] = { 0, 0, 0, 0, 0, 0, 0 };  // Buffer to store the returned UID
   uint8_t uidLength;                        // Length of the UID (4 or 7 bytes depending on ISO14443A card type)
@@ -265,5 +177,185 @@ void loop() {
     }
   }
 
+  retun "";
+}
+
+char* readKeyPad(){
+  // activate keypad and some signal or something
+  // read key and hash it
+  String key = "123";
+  return hash(key);
+}
+
+bool authentificateCard(){
+  // read card
+  char* useridAndUuid = "ssdsdf";
+  // put it into this array  
+  byte cache[100+2*SHA256_BLOCK_SIZE+1
+  
+  // if authentificated activate keypad
+  char* key = readKeyPad();
+
+  // hash combination
+  char* both = hasByte(cache);
+  return checkIfUserValid();
+}
+
+
+void openDoor() {
+  tone(BUZZER, 2000, 200);
+  shift.batchWriteBegin();
+  shift.writeBit(1, HIGH);
+  shift.writeBit(2, HIGH);
+  shift.writeBit(3, HIGH);
+  shift.writeBit(4, HIGH);
+  shift.writeBit(5, HIGH);
+  shift.writeBit(6, HIGH);
+  shift.writeBit(7, HIGH);
+  shift.writeBit(8, HIGH);
+  shift.batchWriteEnd();
+  delay(500);
+  shift.writeBit(0, LOW);
+  delay(500);
+  shift.writeBit(0, HIGH);
+  delay(5000);
+
+  shift.batchWriteBegin();
+  shift.writeBit(1, LOW);
+  shift.writeBit(2, LOW);
+  shift.writeBit(3, LOW);
+  shift.writeBit(4, LOW);
+  shift.writeBit(5, LOW);
+  shift.writeBit(6, LOW);
+  shift.writeBit(7, LOW);
+  shift.writeBit(8, LOW);
+  shift.batchWriteEnd();
+  delay(500);
+  shift.writeBit(0, LOW);
+  delay(500);
+  shift.writeBit(0, HIGH);
+  delay(500);
+}
+
+
+void setup() {
+  // Serieal Interface
+  Serial.begin(115200);
+  delay(10);
+
+  Serial.print(hash("test"));
+
+  // Buzzer
+  pinMode(BUZZER, OUTPUT);
+  digitalWrite(BUZZER, HIGH);
+
+  // Shift Register
+  shift.setBitCount(16);
+  shift.setPins(SH_DATA, SH_CLK, SH_LATCH, SH_IN);
+
+  shift.batchWriteBegin();
+  shift.writeBit(0, HIGH);
+  
+  shift.writeBit(1, LOW);
+  shift.writeBit(2, LOW);
+  shift.writeBit(3, LOW);
+  shift.writeBit(4, LOW);
+  shift.writeBit(5, LOW);
+  shift.writeBit(6, LOW);
+  shift.writeBit(7, LOW);
+  shift.writeBit(8, LOW);
+  shift.writeBit(9, LOW);
+  shift.writeBit(10, LOW);
+  shift.writeBit(11, LOW);
+  shift.writeBit(12, LOW);
+  shift.writeBit(13, LOW);
+  shift.writeBit(14, LOW);
+  shift.writeBit(15, LOW);
+  shift.batchWriteEnd();
+
+  // NFC
+  nfc.begin();
+
+  uint32_t versiondata = nfc.getFirmwareVersion();
+  if (! versiondata) {
+    Serial.print("Didn't find PN53x board");
+    while (1); // halt
+  }
+  // Got ok data, print it out!
+  Serial.print("Found chip PN5"); Serial.println((versiondata >> 24) & 0xFF, HEX);
+  Serial.print("Firmware ver. "); Serial.print((versiondata >> 16) & 0xFF, DEC);
+  Serial.print('.'); Serial.println((versiondata >> 8) & 0xFF, DEC);
+
+  // configure board to read RFID tags
+  nfc.SAMConfig();
+
+  Serial.println("Waiting for an ISO14443A Card ...");
+
+  // WIFI connection
+  WiFi.mode(WIFI_STA);
+  WiFiMulti.addAP("JuLi_HomeNet", "derkonsumgehtumher");
+
+  Serial.println();
+  Serial.println();
+  Serial.print("Wait for WiFi... ");
+
+  while (WiFiMulti.run() != WL_CONNECTED) {
+    Serial.print(".");
+    delay(500);
+  }
+
+  Serial.println("");
+  Serial.println("WiFi connected");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+
+  delay(500);
+}
+
+
+uint16_t loopCounter = 0;
+void loop() {
+  //    const uint16_t port = 80;
+  //    const char * host = "192.168.1.1"; // ip or dns
+  //
+  //
+  //
+  //    Serial.print("connecting to ");
+  //    Serial.println(host);
+  //
+  //    // Use WiFiClient class to create TCP connections
+  //    WiFiClient client;
+  //
+  //    if (!client.connect(host, port)) {
+  //        Serial.println("connection failed");
+  //        Serial.println("wait 5 sec...");
+  //        delay(5000);
+  //        return;
+  //    }
+  //
+  //    // This will send the request to the server
+  //    client.println("Send this data to server");
+  //
+  //    //read back one line from server
+  //    String line = client.readStringUntil('\r');
+  //    Serial.println(line);
+  //
+  //    Serial.println("closing connection");
+  //    client.stop();
+  //
+  //    Serial.println("wait 5 sec...");
+  //    delay(5000);
+  if (authentificateCard()){
+    openDoor();
+  } else {
+    loopCounter++;
+    if (loopCounter > 7200){ // 1 hour
+      // send live update with mqtt
+      loginToServer();
+    }
+    // schedule list update
+    updateUserList();
+    delay(500);
+  }
 }
 
