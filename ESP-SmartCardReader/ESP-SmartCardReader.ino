@@ -35,55 +35,67 @@ Adafruit_PN532 nfc(PN532_SCK, PN532_MISO, PN532_MOSI, PN532_SS);
 
 Shifty shift;
 
-char userList[2000][2*SHA256_BLOCK_SIZE+1];
-uint16_t userListeLen = 0;
+char userList[100][TEXT_HASH_SIZE];
+uint16_t userListLen = 2;
 
-char* hash(char* text) {
-  byte textByte[text.length()];
-  text.getBytes(textByte, text.length());
-  
-  return hashByte(textByte, text.length());
-}
-
-char* hashByte(byte* textByte, int len) {
-  BYTE hash[SHA256_BLOCK_SIZE];
-  char texthash[2*SHA256_BLOCK_SIZE+1];
-  
-  Sha256* hasher=new Sha256();
+void hashByte(byte* textByte, int len, byte* hash) {
+  Sha256* hasher = new Sha256();
   hasher->update(textByte, len);
   hasher->final(hash);
-
-  for(int i=0; i<SHA256_BLOCK_SIZE; ++i)
-    sprintf(texthash+2*i, "%02X", hash[i]);
-
-  return texthash;
 }
 
-void loginToServer(){
+void hashHex(byte* textByte, int len, char* texthash) {
+  byte hash[SHA256_BLOCK_SIZE];
+
+  hashByte(textByte, len, hash);
+
+  for (int i = 0; i < SHA256_BLOCK_SIZE; ++i)
+    sprintf(texthash + 2 * i, "%02X", hash[i]);
+}
+
+void sendLogToServer() {
+
+}
+
+void loginToServer() {
   // push message to mqtt
-  
+
 }
 
-void updateUserList(){
+
+void updateUserList() {
   // mqtt connection check for update
   // json parsing
-
+  char blub[TEXT_HASH_SIZE] = "4FF11748DAC46085D934C9BAB6D9435E2F0631FBF1A8C4E99ED84EDF2A16631E";
+  char blub2[TEXT_HASH_SIZE] = "4FF11748DAC46085D9D5C9BAB6D9435E2F0631FBF1A8C4E99ED84EDF2A16631E";
+  for (uint16_t i = 0; i < TEXT_HASH_SIZE; i++) {
+    userList[0][i] = blub[i];
+  }
+  for (uint16_t i = 0; i < TEXT_HASH_SIZE; i++) {
+    userList[1][i] = blub2[i];
+  }
 }
 
-bool checkIfUserValid(char* userHash){
-  for (uint16_t i=0; i < userListLen; i++){
-    for (uint16_t j=0; j < TEXT_HASH_SIZE; i++){
-      if (userHash[j] != userList[i][j]){
+bool checkIfUserValid(char* userHash) {
+  Serial.println(userHash);
+  for (uint16_t i = 0; i < userListLen; i++) {
+    for (uint16_t j = 0; j < TEXT_HASH_SIZE; j++) {
+
+      Serial.print(userHash[j]);
+      Serial.println(userList[i][j]);
+      if (userHash[j] != userList[i][j]) {
         break;
-      } else if (j == TEXT_HASH_SIZE-1){
+      } else if (j == TEXT_HASH_SIZE - 1) {
         return true;
       }
     }
   }
+  Serial.println("false");
+  tone(BUZZER, 1500, 1500);
   return false;
 }
 
-char* readCard(){
+uint8_t readCard(char* retVal) {
   uint8_t success;
   uint8_t uid[] = { 0, 0, 0, 0, 0, 0, 0 };  // Buffer to store the returned UID
   uint8_t uidLength;                        // Length of the UID (4 or 7 bytes depending on ISO14443A card type)
@@ -136,9 +148,18 @@ char* readCard(){
           nfc.PrintHexChar(data, 16);
           Serial.println("");
 
-          // Wait a bit before reading the card again
-          openDoor();
-          delay(1000);
+          for (uint8_t i = 0; i < (uidLength + 16); i++) {
+            if (i < uidLength) {
+              retVal[i] = uid[i];
+            } else {
+              retVal[i] = data[i - uidLength];
+            }
+          }
+
+          nfc.PrintHexChar(data, uidLength + 16);
+          Serial.println("");
+
+          return uidLength + 16;
         }
         else
         {
@@ -151,59 +172,77 @@ char* readCard(){
       }
     }
 
-    if (uidLength == 7)
-    {
-      // We probably have a Mifare Ultralight card ...
-      Serial.println("Seems to be a Mifare Ultralight tag (7 byte UID)");
-
-      // Try to read the first general-purpose user page (#4)
-      Serial.println("Reading page 4");
-      uint8_t data[32];
-      success = nfc.mifareultralight_ReadPage (4, data);
-      if (success)
-      {
-        // Data seems to have been read ... spit it out
-        nfc.PrintHexChar(data, 4);
-        Serial.println("");
-
-        // Wait a bit before reading the card again
-        openDoor();
-        delay(1000);
-      }
-      else
-      {
-        Serial.println("Ooops ... unable to read the requested page!?");
-      }
-    }
+    //    if (uidLength == 7)
+    //    {
+    //      // We probably have a Mifare Ultralight card ...
+    //      Serial.println("Seems to be a Mifare Ultralight tag (7 byte UID)");
+    //
+    //      // Try to read the first general-purpose user page (#4)
+    //      Serial.println("Reading page 4");
+    //      uint8_t data[32];
+    //      success = nfc.mifareultralight_ReadPage (4, data);
+    //      if (success)
+    //      {
+    //        // Data seems to have been read ... spit it out
+    //        nfc.PrintHexChar(data, 4);
+    //        Serial.println("");
+    //
+    //        // Wait a bit before reading the card again
+    //        openDoor();
+    //        delay(1000);
+    //      }
+    //      else
+    //      {
+    //        Serial.println("Ooops ... unable to read the requested page!?");
+    //      }
+    //    }
   }
 
-  retun "";
+  return -1;
 }
 
-char* readKeyPad(){
+uint8_t readKeyPad(char * pin) {
   // activate keypad and some signal or something
-  // read key and hash it
-  String key = "123";
-  return hash(key);
+  tone(BUZZER, 2000, 200);
+
+  // read key till end signal
+  pin[0] = '1';
+  pin[1] = '1';
+  pin[2] = '1';
+
+  delay(1500);
+
+  return 3;
 }
 
-bool authentificateCard(){
+bool authentificateCard() {
+  char cache[1000];
+  char pin[20];
+  char result[2 * SHA256_BLOCK_SIZE + 1];
   // read card
-  char* useridAndUuid = "ssdsdf";
-  // put it into this array  
-  byte cache[100+2*SHA256_BLOCK_SIZE+1
-  
-  // if authentificated activate keypad
-  char* key = readKeyPad();
+  uint8_t cardResult = readCard(cache);
 
-  // hash combination
-  char* both = hasByte(cache);
-  return checkIfUserValid();
+  if (cardResult > 0) {
+    // card read, ask user for pin
+    uint8_t pinResult = readKeyPad(pin);
+
+    if (pinResult > 0) {
+      // got pieces in place --> hash it
+      hashByte((byte*) pin, pinResult, (byte*) (cache + cardResult));
+      hashHex((byte*) cache, cardResult + SHA256_BLOCK_SIZE, result);
+
+      // check list for validity
+      return checkIfUserValid(result);
+    }
+  }
+  return false;
 }
 
 
 void openDoor() {
-  tone(BUZZER, 2000, 200);
+  tone(BUZZER, 3000, 150);
+  delay(300);
+  tone(BUZZER, 3000, 150);
   shift.batchWriteBegin();
   shift.writeBit(1, HIGH);
   shift.writeBit(2, HIGH);
@@ -239,11 +278,11 @@ void openDoor() {
 
 
 void setup() {
+  updateUserList();
   // Serieal Interface
   Serial.begin(115200);
   delay(10);
-
-  Serial.print(hash("test"));
+  Serial.println("");
 
   // Buzzer
   pinMode(BUZZER, OUTPUT);
@@ -255,7 +294,7 @@ void setup() {
 
   shift.batchWriteBegin();
   shift.writeBit(0, HIGH);
-  
+
   shift.writeBit(1, LOW);
   shift.writeBit(2, LOW);
   shift.writeBit(3, LOW);
@@ -345,17 +384,20 @@ void loop() {
   //
   //    Serial.println("wait 5 sec...");
   //    delay(5000);
-  if (authentificateCard()){
+  if (authentificateCard()) {
     openDoor();
-  } else {
-    loopCounter++;
-    if (loopCounter > 7200){ // 1 hour
-      // send live update with mqtt
-      loginToServer();
-    }
-    // schedule list update
-    updateUserList();
-    delay(500);
   }
+  //  else {
+  //    loopCounter++;
+  //    if (loopCounter > 7200){ // 1 hour
+  //      // send live update with mqtt
+  //      loginToServer();
+  //    }
+  //    // schedule list update
+  //    updateUserList();
+  //    delay(500);
+  //  }
+
+  delay(1000);
 }
 
