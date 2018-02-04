@@ -3,18 +3,23 @@
 
 */
 
-#include <ESP8266WiFi.h>
-#include <ESP8266WiFiMulti.h>
+// Includes
+#include <Arduino.h>
 
+#include <ESP8266WiFi.h>
+#include <PubSubClient.h>
+
+#include <ESP8266HTTPClient.h>
 
 #include <Wire.h>
 #include <SPI.h>
+#include <ArduinoJson.h>
+
 #include "Adafruit_PN532.h"
-
 #include "Shifty.h"
-
 #include "sha256.h"
 
+// Pin Configuration
 #define PN532_SCK  (13)
 #define PN532_MOSI (5)
 #define PN532_SS   (2)
@@ -27,16 +32,34 @@
 
 #define BUZZER  (15)
 
+// Constants
+const char* SALT = "securesalt";
 #define TEXT_HASH_SIZE (2*SHA256_BLOCK_SIZE+1)
 
-ESP8266WiFiMulti WiFiMulti;
+const uint16_t READER_TIMEOUT = 2500; // seconds * 166 .. don't ask ...
+
+const char* SN = "nfcr2018010001";
+
+const char* ssid = "JuLi_HomeNet";
+const char* password = "derkonsumgehtumher";
+const char* mqtt_server = "192.168.100.39";
+const char* CONFIG_FILE_PATH = "http://jensheuschkel-it.de/conf/conf.json";
+
+const char* login_topic = "shp/nfcreader/login";
+const char* user_topic = "shp/nfcreader/user";
+const char* logger_topic = "shp/nfcreader/userLog";
+
+// Programm start here
+WiFiClient espClient;
+PubSubClient client(espClient);
 
 Adafruit_PN532 nfc(PN532_SCK, PN532_MISO, PN532_MOSI, PN532_SS);
 
 Shifty shift;
 
-char userList[100][TEXT_HASH_SIZE];
+char json[] = "[\"4FF11748DAC46085D9D5345AB6D9435E2F0631FBF1A8C4E99ED84EDF2A16631E\",\"4FF11748DAC46085D9D5C9BAB6D9435E2F0631FBF1A8C4E99ED84EDF2A16631E\"]";
 uint16_t userListLen = 2;
+char userList[300][TEXT_HASH_SIZE];
 
 void hashByte(byte* textByte, int len, byte* hash) {
   Sha256* hasher = new Sha256();
@@ -53,27 +76,79 @@ void hashHex(byte* textByte, int len, char* texthash) {
     sprintf(texthash + 2 * i, "%02X", hash[i]);
 }
 
-void sendLogToServer() {
-
+void sendLogToServer(const char* user) {
+  uint8_t counter = 0;
+  while (!client.publish(logger_topic, user)) {
+    delay(250);
+    counter ++;
+    if (counter > 10)
+      break;
+  }
 }
 
 void loginToServer() {
   // push message to mqtt
-
+  uint8_t counter = 0;
+  while (!client.publish(login_topic, SN)) {
+    delay(250);
+    counter ++;
+    if (counter > 10)
+      break;
+  }
 }
 
 
 void updateUserList() {
-  // mqtt connection check for update
-  // json parsing
-  char blub[TEXT_HASH_SIZE] = "4FF11748DAC46085D934C9BAB6D9435E2F0631FBF1A8C4E99ED84EDF2A16631E";
-  char blub2[TEXT_HASH_SIZE] = "4FF11748DAC46085D9D5C9BAB6D9435E2F0631FBF1A8C4E99ED84EDF2A16631E";
-  for (uint16_t i = 0; i < TEXT_HASH_SIZE; i++) {
-    userList[0][i] = blub[i];
+  // get config wire http
+  HTTPClient http;
+  http.begin(CONFIG_FILE_PATH);
+  int httpCode = http.GET();
+
+  // httpCode will be negative on error
+  if (httpCode > 0) {
+    // HTTP header has been send and Server response header has been handled
+    Serial.printf("[HTTP] GET... code: %d\n", httpCode);
+
+    // file found at server
+    if (httpCode == HTTP_CODE_OK) { // json parsing
+      String payload = http.getString();
+      Serial.println(payload);
+
+      const size_t bufferSize = JSON_ARRAY_SIZE(22) + JSON_OBJECT_SIZE(2) + 1470; // 20 slots
+      DynamicJsonBuffer jsonBuffer(bufferSize);
+      JsonObject& root = jsonBuffer.parse(payload);
+
+      if (root.success()) {
+        // using C++11 syntax
+        JsonArray& data = root["usr"];
+        for (auto value : data) {
+          Serial.println(value.as<char*>());
+          for (uint16_t i = 0; i < TEXT_HASH_SIZE; i++) {
+            userList[0][i] = value.as<char*>()[i];
+          }
+        }
+        Serial.println("done..");
+      } else {
+        Serial.println("canceled");
+      }
+
+    }
+  } else {
+    Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
   }
-  for (uint16_t i = 0; i < TEXT_HASH_SIZE; i++) {
-    userList[1][i] = blub2[i];
-  }
+
+  http.end();
+
+
+
+  //  char blub[TEXT_HASH_SIZE] = "4FF11748DAC46085D934C9BAB6D9435E2F0631FBF1A8C4E99ED84EDF2A16631E";
+  //  char blub2[TEXT_HASH_SIZE] = "4FF11748DAC46085D9D5C9BAB6D9435E2F0631FBF1A8C4E99ED84EDF2A16631E";
+  //  for (uint16_t i = 0; i < TEXT_HASH_SIZE; i++) {
+  //    userList[0][i] = blub[i];
+  //  }
+  //  for (uint16_t i = 0; i < TEXT_HASH_SIZE; i++) {
+  //    userList[1][i] = blub2[i];
+  //  }
 }
 
 bool checkIfUserValid(char* userHash) {
@@ -95,7 +170,7 @@ bool checkIfUserValid(char* userHash) {
   return false;
 }
 
-uint8_t readCard(char* retVal) {
+int16_t readCard(char* retVal) {
   uint8_t success;
   uint8_t uid[] = { 0, 0, 0, 0, 0, 0, 0 };  // Buffer to store the returned UID
   uint8_t uidLength;                        // Length of the UID (4 or 7 bytes depending on ISO14443A card type)
@@ -103,7 +178,7 @@ uint8_t readCard(char* retVal) {
   // Wait for an ISO14443A type cards (Mifare, etc.).  When one is found
   // 'uid' will be populated with the UID, and uidLength will indicate
   // if the uid is 4 bytes (Mifare Classic) or 7 bytes (Mifare Ultralight)
-  success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength);
+  success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength, READER_TIMEOUT);
 
   if (success) {
     // Display some basic information about the card
@@ -164,11 +239,13 @@ uint8_t readCard(char* retVal) {
         else
         {
           Serial.println("Ooops ... unable to read the requested block.  Try another key?");
+          return -1;
         }
       }
       else
       {
         Serial.println("Ooops ... authentication failed: Try another key?");
+        return -1;
       }
     }
 
@@ -198,7 +275,7 @@ uint8_t readCard(char* retVal) {
     //    }
   }
 
-  return -1;
+  return -2;
 }
 
 uint8_t readKeyPad(char * pin) {
@@ -215,12 +292,14 @@ uint8_t readKeyPad(char * pin) {
   return 3;
 }
 
+
+char lastUser[2 * SHA256_BLOCK_SIZE + 1];
 bool authentificateCard() {
   char cache[1000];
   char pin[20];
-  char result[2 * SHA256_BLOCK_SIZE + 1];
+  char* result = lastUser;
   // read card
-  uint8_t cardResult = readCard(cache);
+  int16_t cardResult = readCard(cache);
 
   if (cardResult > 0) {
     // card read, ask user for pin
@@ -235,6 +314,7 @@ bool authentificateCard() {
       return checkIfUserValid(result);
     }
   }
+
   return false;
 }
 
@@ -277,8 +357,42 @@ void openDoor() {
 }
 
 
+void reconnect() {
+  // Loop until we're reconnected
+  while (!client.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    // Attempt to connect
+    if (client.connect("ESP8266Client")) {
+      Serial.println("connected");
+      // Once connected, publish an announcement...
+      client.publish("outTopic", "hello world");
+      // ... and resubscribe
+      client.subscribe("inTopic");
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" try again in 5 seconds");
+      // Wait 5 seconds before retrying
+      delay(5000);
+    }
+  }
+}
+
+void callback(char* topic, byte* payload, unsigned int length) {
+  Serial.print("Message arrived [");
+  Serial.print(topic);
+  Serial.print("] ");
+  for (int i = 0; i < length; i++) {
+    Serial.print((char)payload[i]);
+  }
+  Serial.println();
+
+  //  if (strcmp(user_topic, topic) == 0) {
+  //    Serial.println("Got new User-List, update.");
+  //  }
+}
+
 void setup() {
-  updateUserList();
   // Serieal Interface
   Serial.begin(115200);
   delay(10);
@@ -332,13 +446,13 @@ void setup() {
 
   // WIFI connection
   WiFi.mode(WIFI_STA);
-  WiFiMulti.addAP("JuLi_HomeNet", "derkonsumgehtumher");
+  WiFi.begin(ssid, password);
 
   Serial.println();
   Serial.println();
   Serial.print("Wait for WiFi... ");
 
-  while (WiFiMulti.run() != WL_CONNECTED) {
+  while (WiFi.status() != WL_CONNECTED) {
     Serial.print(".");
     delay(500);
   }
@@ -349,6 +463,22 @@ void setup() {
   Serial.println(WiFi.localIP());
 
   delay(500);
+
+  // MQTT
+  client.setServer(mqtt_server, 1883);
+  client.setCallback(callback);
+  if (!client.connected()) {
+    reconnect();
+  }
+  client.loop();
+  Serial.print("subscribe.. ");
+  if (client.subscribe(user_topic)) {
+    Serial.println("done");
+  } else {
+    Serial.println("fail");
+  }
+  loginToServer();
+  updateUserList();
 }
 
 
@@ -384,8 +514,15 @@ void loop() {
   //
   //    Serial.println("wait 5 sec...");
   //    delay(5000);
+
+  if (!client.connected()) {
+    reconnect();
+  }
+  client.loop();
+
   if (authentificateCard()) {
     openDoor();
+    sendLogToServer(lastUser);
   }
   //  else {
   //    loopCounter++;
