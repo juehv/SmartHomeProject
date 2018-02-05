@@ -63,6 +63,7 @@ char userList[300][TEXT_HASH_SIZE];
 
 void hashByte(byte* textByte, int len, byte* hash) {
   Sha256* hasher = new Sha256();
+  hasher->update((byte*) SALT, strlen(SALT)); 
   hasher->update(textByte, len);
   hasher->final(hash);
 }
@@ -84,6 +85,12 @@ void sendLogToServer(const char* user) {
     if (counter > 10)
       break;
   }
+
+  HTTPClient http;    //Declare object of class HTTPClient
+ 
+   http.begin("http://jensheuschkel-it.de/conf/dump.php");
+   http.PUT(user);
+   http.end();
 }
 
 void loginToServer() {
@@ -111,12 +118,14 @@ void updateUserList() {
 
     // file found at server
     if (httpCode == HTTP_CODE_OK) { // json parsing
-      String payload = http.getString();
-      Serial.println(payload);
+      //      String payload = http.getString();
+      //      Serial.println(payload);
+
+      WiFiClient& httpStream = http.getStream();
 
       const size_t bufferSize = JSON_ARRAY_SIZE(22) + JSON_OBJECT_SIZE(2) + 1470; // 20 slots
       DynamicJsonBuffer jsonBuffer(bufferSize);
-      JsonObject& root = jsonBuffer.parse(payload);
+      JsonObject& root = jsonBuffer.parse(httpStream);
 
       if (root.success()) {
         // using C++11 syntax
